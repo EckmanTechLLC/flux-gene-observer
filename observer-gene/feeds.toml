@@ -1,0 +1,914 @@
+[filter]
+include_prefixes = ["flux-"]
+exclude_prefixes = ["flux-devices/", "flux-core/"]
+include_exact    = ["knowledge-gene/steer"]
+
+# ── Shared normalization recipes ──────────────────────────────────────────────
+# Stateless recipes defined here. Stateful recipes (zscore_window_20,
+# ema_relative_third) are looked up by name in build_pollers.
+
+[normalize.temp_celsius]
+type = "linear_range"
+min  = -40.0
+max  =  40.0
+
+[normalize.percent_0_100]
+type = "linear_range"
+min  =   0.0
+max  = 100.0
+
+[normalize.wind_kmh]
+type = "linear_range"
+min  =   0.0
+max  = 100.0
+
+[normalize.consumer_sentiment]
+type = "linear_range"
+min  =   0.0
+max  = 110.0
+
+[normalize.initial_claims]
+type = "linear_range"
+min  =       0.0
+max  = 500000.0
+
+[normalize.unemployment]
+type = "linear_range"
+min  =  0.0
+max  = 15.0
+
+[normalize.cpi]
+type = "linear_range"
+min  = 280.0
+max  = 380.0
+
+[normalize.gdp_growth]
+type = "linear_range"
+min  = -10.0
+max  =  10.0
+
+[normalize.change_band_20]
+type = "linear_range"
+min  = -20.0
+max  =  20.0
+
+[normalize.aviation_speed]
+type = "linear_range"
+min  =   0.0
+max  = 300.0
+
+[normalize.aviation_altitude]
+type = "linear_range"
+min  =     0.0
+max  = 12500.0
+
+[normalize.ships_speed]
+type = "linear_range"
+min  =  0.0
+max  = 25.0
+
+# --- weather (new flat schema) ---
+
+[normalize.wind_ms]
+type = "linear_range"
+min  = 0.0
+max  = 30.0          # m/s; ~108 km/h, hurricane-force ceiling
+
+[normalize.pressure_mb]
+type = "linear_range"
+min  =  950.0
+max  = 1050.0        # surface pressure range; storm lows to highs
+
+[normalize.weather_code_norm]
+type = "linear_range"
+min  =  0.0
+max  = 99.0          # WMO weather codes 0-99
+
+[normalize.wind_dir_deg]
+type = "linear_range"
+min  =   0.0
+max  = 360.0
+
+# --- air quality ---
+
+[normalize.pm25]
+type = "linear_range"
+min  =   0.0
+max  = 100.0         # ug/m3 canonical
+
+[normalize.pm10]
+type = "linear_range"
+min  =   0.0
+max  = 200.0
+
+[normalize.gas_ppm]
+type = "linear_range"
+min  = 0.0
+max  = 0.2           # ppm for CO/NO2/O3/SO2
+
+[normalize.station_count]
+type = "linear_range"
+min  =  0.0
+max  = 20.0
+
+# --- wildfires ---
+
+[normalize.confidence]
+type = "linear_range"
+min  = 0.0
+max  = 1.0
+
+[normalize.fire_count]
+type = "linear_range"
+min  =   0.0
+max  = 200.0
+
+[normalize.brightness_k]
+type = "linear_range"
+min  = 280.0
+max  = 500.0
+
+[normalize.frp_mw]
+type = "linear_range"
+min  =    0.0
+max  = 2000.0
+
+# --- volcanoes (fractions are 0-1 by construction) ---
+
+[normalize.fraction]
+type = "linear_range"
+min  = 0.0
+max  = 1.0
+
+[normalize.volcano_count]
+type = "linear_range"
+min  =  0.0
+max  = 50.0          # global active volcanoes rarely exceed this
+
+# --- grid ---
+
+[normalize.eur_per_mwh]
+type = "linear_range"
+min  =   0.0
+max  = 500.0
+
+[normalize.load_mw]
+type = "linear_range"
+min  =      0.0
+max  = 100_000.0     # covers Germany peak ~60 GW
+
+[normalize.us_demand_mwh]
+type = "linear_range"
+min  =       0.0
+max  = 200_000.0     # PJM peak ~150 GW
+
+[normalize.us_interchange_mwh]
+type = "linear_range"
+min  = -50_000.0
+max  =  50_000.0     # centered; negative = import
+
+# --- spaceweather ---
+
+[normalize.solar_density]
+type = "linear_range"
+min  =  0.0
+max  = 30.0          # particles/cm3
+
+[normalize.solar_speed]
+type = "linear_range"
+min  = 200.0
+max  = 800.0         # km/s
+
+[normalize.solar_temp]
+type = "linear_range"
+min  =       0.0
+max  = 1_000_000.0   # Kelvin, very wide
+
+[normalize.kp_index]
+type = "linear_range"
+min  = 0.0
+max  = 9.0           # geomagnetic K index
+
+[normalize.alert_count]
+type = "linear_range"
+min  =   0.0
+max  = 200.0
+
+# --- ISS ---
+
+[normalize.iss_crew]
+type = "linear_range"
+min  =  0.0
+max  = 20.0          # ISS+Tiangong total
+
+[normalize.iss_altitude]
+type = "linear_range"
+min  = 350.0
+max  = 450.0         # km
+
+[normalize.iss_velocity]
+type = "linear_range"
+min  = 27000.0
+max  = 28000.0       # km/h
+
+[normalize.iss_footprint]
+type = "linear_range"
+min  =    0.0
+max  = 5000.0        # km
+
+# --- energy (EIA) ---
+
+[normalize.natural_gas_usd]
+type = "linear_range"
+min  =  0.0
+max  = 10.0          # $/MMBTU
+
+[normalize.electricity_demand]
+type = "linear_range"
+min  = 300_000.0
+max  = 600_000.0     # MWh
+
+[normalize.oil_usd]
+type = "linear_range"
+min  =   0.0
+max  = 200.0         # $/BBL
+
+# --- aviation zone count recipes ---
+
+[normalize.aviation_count_europe]
+type = "linear_range"
+min  =     0.0
+max  = 15_000.0      # was 10_000; overflowing at 10,213
+
+[normalize.aviation_count_uk]
+type = "linear_range"
+min  =    0.0
+max  = 5_000.0       # was 3_000; overflowing at 3,052
+
+[normalize.aviation_count_natl]
+type = "linear_range"
+min  =    0.0
+max  = 2_500.0       # unchanged
+
+[normalize.aviation_count_east_asia]
+type = "linear_range"
+min  =    0.0
+max  = 2_000.0
+
+[normalize.aviation_count_north_america]
+type = "linear_range"
+min  =     0.0
+max  = 25_000.0
+
+[normalize.aviation_count_oceania]
+type = "linear_range"
+min  =   0.0
+max  = 200.0
+
+# --- ship zone count recipes (new zones) ---
+
+[normalize.ships_count_singapore_strait]
+type = "linear_range"
+min  =    0.0
+max  = 1_000.0
+
+[normalize.ships_count_us_east_coast]
+type = "linear_range"
+min  =    0.0
+max  = 1_000.0
+
+# ── feeds ─────────────────────────────────────────────────────────────────────
+
+# ── Weather — flat_multi, 56 cities × 6 properties = 336 signals ─────────────
+# NAME-FIELD CRITICAL: the first three properties use `name` to preserve seeded
+# IDs 10-27 for the original 6 cities (new-york, london, tokyo, sydney, dubai,
+# los-angeles).  `name` = old registry key suffix (original Flux path);
+# `path` = new flat extraction key in the reshaped schema.
+# Audit at deploy: flux-weather MUST show seeded=18, fresh=318.
+
+[[feed]]
+namespace = "flux-weather"
+shape     = "flat_multi"
+entities  = [
+  "accra", "addis-ababa", "amsterdam", "anchorage", "auckland",
+  "bangkok", "beijing", "berlin", "bogota", "buenos-aires",
+  "cairo", "cape-town", "casablanca", "chicago", "delhi",
+  "dhaka", "doha", "dubai", "havana", "ho-chi-minh-city",
+  "hong-kong", "honolulu", "istanbul", "jakarta", "johannesburg",
+  "karachi", "kolkata", "lagos", "lima", "london",
+  "los-angeles", "madrid", "manila", "melbourne", "mexico-city",
+  "miami", "moscow", "mumbai", "nairobi", "new-york",
+  "paris", "reykjavik", "riyadh", "rome", "santiago",
+  "sao-paulo", "seoul", "shanghai", "singapore", "stockholm",
+  "sydney", "taipei", "tehran", "tel-aviv", "tokyo", "toronto",
+]
+
+  [[feed.property]]
+  name      = "current.temperature_2m"     # preserves seed key (IDs 10/13/16/19/22/25)
+  path      = "temperature_c"
+  normalize = "temp_celsius"
+
+  [[feed.property]]
+  name      = "current.wind_speed_10m"     # preserves seed key (IDs 11/14/17/20/23/26)
+  path      = "wind_speed_ms"
+  normalize = "wind_ms"
+
+  [[feed.property]]
+  name      = "current.relative_humidity_2m"  # preserves seed key (IDs 12/15/18/21/24/27)
+  path      = "humidity_pct"
+  normalize = "percent_0_100"
+
+  # New properties — fresh IDs allocated above HWM=189.
+  [[feed.property]]
+  path      = "pressure_mb"
+  normalize = "pressure_mb"
+
+  [[feed.property]]
+  path      = "weather_code"
+  normalize = "weather_code_norm"
+
+  [[feed.property]]
+  path      = "wind_direction_deg"
+  normalize = "wind_dir_deg"
+
+# ── Economic — scalar, 5 entities = 5 signals (seeded) ───────────────────────
+
+[[feed]]
+namespace = "flux-economic"
+shape     = "scalar"
+
+  [[feed.entity]]
+  name      = "us-consumer-sentiment"
+  path      = "value"
+  normalize = "consumer_sentiment"
+
+  [[feed.entity]]
+  name      = "us-initial-claims"
+  path      = "value"
+  normalize = "initial_claims"
+
+  [[feed.entity]]
+  name      = "us-unemployment-rate"
+  path      = "value"
+  normalize = "unemployment"
+
+  [[feed.entity]]
+  name      = "us-inflation-cpi"
+  path      = "value"
+  normalize = "cpi"
+
+  [[feed.entity]]
+  name      = "us-gdp-growth"
+  path      = "value"
+  normalize = "gdp_growth"
+
+# ── Internet — scalar, 1 entity = 1 signal (seeded) ──────────────────────────
+
+[[feed]]
+namespace = "flux-internet"
+shape     = "scalar"
+
+  [[feed.entity]]
+  name         = "global-traffic"
+  path         = "result.summary_0.mobile"
+  parse_string = true
+  normalize    = "percent_0_100"
+
+# ── Crypto — nested_by_key, 14 entities × 3 signals = 42 (seeded) ────────────
+
+[[feed]]
+namespace = "flux-crypto"
+shape     = "nested_by_key"
+
+  [[feed.entity]]
+  name = "bitcoin"
+  key  = "XXBTZUSD"
+
+  [[feed.entity]]
+  name = "ethereum"
+  key  = "XETHZUSD"
+
+  [[feed.entity]]
+  name = "solana"
+  key  = "SOLUSD"
+
+  [[feed.entity]]
+  name = "xrp"
+  key  = "XXRPZUSD"
+
+  [[feed.entity]]
+  name = "dogecoin"
+  key  = "XDGUSD"
+
+  [[feed.entity]]
+  name = "litecoin"
+  key  = "XLTCZUSD"
+
+  [[feed.entity]]
+  name = "cardano"
+  key  = "ADAUSD"
+
+  [[feed.entity]]
+  name = "uniswap"
+  key  = "UNIUSD"
+
+  [[feed.entity]]
+  name = "chainlink"
+  key  = "LINKUSD"
+
+  [[feed.entity]]
+  name = "cosmos"
+  key  = "ATOMUSD"
+
+  [[feed.entity]]
+  name = "polygon"
+  key  = "POLUSD"
+
+  [[feed.entity]]
+  name = "avalanche"
+  key  = "AVAXUSD"
+
+  [[feed.entity]]
+  name = "near"
+  key  = "NEARUSD"
+
+  [[feed.entity]]
+  name = "polkadot"
+  key  = "DOTUSD"
+
+  [[feed.signal]]
+  name         = "price"
+  path         = "result.{key}.c[0]"
+  parse_string = true
+  positive     = true
+  normalize    = "zscore_window_20"
+
+  [[feed.signal]]
+  name         = "vol"
+  path         = "result.{key}.v[1]"
+  parse_string = true
+  normalize    = "ema_relative_third"
+
+  [[feed.signal]]
+  name         = "change"
+  derive       = "pct_change"
+  from_path    = "result.{key}.c[0]"
+  ref_path     = "result.{key}.p[1]"
+  parse_string = true
+  normalize    = "change_band_20"
+
+# ── Stocks — array_record, 5 entities × 2 properties = 10 (seeded) ───────────
+
+[[feed]]
+namespace = "flux-stocks"
+shape     = "array_record"
+entities  = ["SPY", "NVDA", "AAPL", "TSLA", "MSFT"]
+
+  [[feed.property]]
+  name      = "close"
+  path      = "results[0].c"
+  positive  = true
+  normalize = "zscore_window_20"
+
+  [[feed.property]]
+  name      = "vol"
+  path      = "results[0].v"
+  normalize = "ema_relative_third"
+
+# ── Commodities — time_series, 6 entities × 1 signal = 6 (seeded) ────────────
+
+[[feed]]
+namespace    = "flux-commodities"
+shape        = "time_series"
+entities     = ["brent-crude", "wti-crude", "natural-gas", "copper", "corn", "wheat"]
+signal_name  = "derived.zscore"
+path         = "data[0].value"
+parse_string = true
+positive     = true
+normalize    = "zscore_window_20"
+
+# ── Aviation — aggregation ────────────────────────────────────────────────────
+# Existing 3 zones: seeded=3 each.  Count divisors bumped for europe + uk.
+# New 3 zones: fresh=3 each.
+
+[[feed]]
+namespace = "flux-aviation-europe"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = "aviation_count_europe"
+
+  [[feed.aggregate]]
+  name      = "mean.speed_ms"
+  normalize = "aviation_speed"
+
+  [[feed.aggregate]]
+  name      = "mean.altitude_m"
+  normalize = "aviation_altitude"
+
+[[feed]]
+namespace = "flux-aviation-uk"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = "aviation_count_uk"
+
+  [[feed.aggregate]]
+  name      = "mean.speed_ms"
+  normalize = "aviation_speed"
+
+  [[feed.aggregate]]
+  name      = "mean.altitude_m"
+  normalize = "aviation_altitude"
+
+[[feed]]
+namespace = "flux-aviation-north-atlantic"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = "aviation_count_natl"
+
+  [[feed.aggregate]]
+  name      = "mean.speed_ms"
+  normalize = "aviation_speed"
+
+  [[feed.aggregate]]
+  name      = "mean.altitude_m"
+  normalize = "aviation_altitude"
+
+# New aviation zones — all fresh allocations.
+
+[[feed]]
+namespace = "flux-aviation-east-asia"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = "aviation_count_east_asia"
+
+  [[feed.aggregate]]
+  name      = "mean.speed_ms"
+  normalize = "aviation_speed"
+
+  [[feed.aggregate]]
+  name      = "mean.altitude_m"
+  normalize = "aviation_altitude"
+
+[[feed]]
+namespace = "flux-aviation-north-america"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = "aviation_count_north_america"
+
+  [[feed.aggregate]]
+  name      = "mean.speed_ms"
+  normalize = "aviation_speed"
+
+  [[feed.aggregate]]
+  name      = "mean.altitude_m"
+  normalize = "aviation_altitude"
+
+[[feed]]
+namespace = "flux-aviation-oceania"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = "aviation_count_oceania"
+
+  [[feed.aggregate]]
+  name      = "mean.speed_ms"
+  normalize = "aviation_speed"
+
+  [[feed.aggregate]]
+  name      = "mean.altitude_m"
+  normalize = "aviation_altitude"
+
+# ── Ships — aggregation ───────────────────────────────────────────────────────
+# Existing 3 zones: seeded=2 each.  Two new zones: fresh=2 each.
+
+[[feed]]
+namespace = "flux-ships-north-sea"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = { type = "linear_range", min = 0.0, max = 10000.0 }
+
+  [[feed.aggregate]]
+  name      = "mean.speed"
+  normalize = "ships_speed"
+
+[[feed]]
+namespace = "flux-ships-english-channel"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = { type = "linear_range", min = 0.0, max = 2500.0 }
+
+  [[feed.aggregate]]
+  name      = "mean.speed"
+  normalize = "ships_speed"
+
+[[feed]]
+namespace = "flux-ships-thames"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = { type = "linear_range", min = 0.0, max = 1500.0 }
+
+  [[feed.aggregate]]
+  name      = "mean.speed"
+  normalize = "ships_speed"
+
+# New ship zones — all fresh allocations.
+
+[[feed]]
+namespace = "flux-ships-singapore-strait"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = "ships_count_singapore_strait"
+
+  [[feed.aggregate]]
+  name      = "mean.speed"
+  normalize = "ships_speed"
+
+[[feed]]
+namespace = "flux-ships-us-east-coast"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = "ships_count_us_east_coast"
+
+  [[feed.aggregate]]
+  name      = "mean.speed"
+  normalize = "ships_speed"
+
+# ── Spaceweather — 4 heterogeneous blocks, 8 fresh signals total ──────────────
+# Multiple [[feed]] blocks with the same namespace are legal: each creates its
+# own poller with a distinct entity set and schema.
+
+[[feed]]
+namespace = "flux-spaceweather"
+shape     = "flat_multi"
+entities  = ["solar-wind"]
+
+  [[feed.property]]
+  path      = "density"
+  normalize = "solar_density"
+
+  [[feed.property]]
+  path      = "speed_kms"
+  normalize = "solar_speed"
+
+  [[feed.property]]
+  path      = "temperature"
+  normalize = "solar_temp"
+
+[[feed]]
+namespace = "flux-spaceweather"
+shape     = "scalar"
+
+  [[feed.entity]]
+  name      = "active-alerts"
+  path      = "count"
+  normalize = "alert_count"
+
+[[feed]]
+namespace = "flux-spaceweather"
+shape     = "scalar"
+
+  [[feed.entity]]
+  name      = "kp-index"
+  path      = "kp"
+  normalize = "kp_index"
+
+[[feed]]
+namespace = "flux-spaceweather"
+shape     = "flat_multi"
+entities  = ["geomag-forecast"]
+
+  [[feed.property]]
+  path      = "forecast_day_1"
+  normalize = "kp_index"
+
+  [[feed.property]]
+  path      = "forecast_day_2"
+  normalize = "kp_index"
+
+  [[feed.property]]
+  path      = "forecast_day_3"
+  normalize = "kp_index"
+
+# ── Volcanoes — aggregation, 8 fresh signals ──────────────────────────────────
+
+[[feed]]
+namespace = "flux-volcanoes"
+shape     = "aggregation"
+
+  [[feed.aggregate]]
+  name      = "count"
+  normalize = "volcano_count"
+
+  [[feed.aggregate]]
+  name      = "fraction.color_code=GREEN"
+  normalize = "fraction"
+
+  [[feed.aggregate]]
+  name      = "fraction.color_code=YELLOW"
+  normalize = "fraction"
+
+  [[feed.aggregate]]
+  name      = "fraction.color_code=ORANGE"
+  normalize = "fraction"
+
+  [[feed.aggregate]]
+  name      = "fraction.color_code=RED"
+  normalize = "fraction"
+
+  [[feed.aggregate]]
+  name      = "fraction.alert_level=ADVISORY"
+  normalize = "fraction"
+
+  [[feed.aggregate]]
+  name      = "fraction.alert_level=WATCH"
+  normalize = "fraction"
+
+  [[feed.aggregate]]
+  name      = "fraction.alert_level=WARNING"
+  normalize = "fraction"
+
+# ── Wildfires — flat_multi, 15 regions × 4 properties = 60 fresh signals ──────
+
+[[feed]]
+namespace = "flux-wildfires"
+shape     = "flat_multi"
+entities  = [
+  "amazon", "australia-east", "australia-west", "california",
+  "canada", "greece-turkey", "iberia", "indonesia",
+  "mediterranean", "pacific-nw", "rockies", "se-asia",
+  "siberia", "southeast-us", "sub-saharan-africa",
+]
+
+  [[feed.property]]
+  path      = "avg_confidence"
+  normalize = "confidence"
+
+  [[feed.property]]
+  path      = "fire_count"
+  normalize = "fire_count"
+
+  [[feed.property]]
+  path      = "max_brightness_k"
+  normalize = "brightness_k"
+
+  [[feed.property]]
+  path      = "total_frp_mw"
+  normalize = "frp_mw"
+
+# ── Air quality — flat_multi, 44 cities × 7 properties = 308 fresh signals ────
+# Unit caveat: stations report mixed units (ug/m3 vs ppm); signals for
+# stations reporting in the non-canonical unit will be near 0 or ceiling.
+# Deviations still carry signal; acceptable per option A.
+
+[[feed]]
+namespace = "flux-airquality"
+shape     = "flat_multi"
+entities  = [
+  "accra", "addis-ababa", "amsterdam", "anchorage", "auckland",
+  "bangkok", "beijing", "berlin", "buenos-aires", "chicago",
+  "delhi", "dhaka", "dubai", "ho-chi-minh-city", "hong-kong",
+  "honolulu", "jakarta", "karachi", "kolkata", "lagos",
+  "lima", "london", "los-angeles", "madrid", "manila",
+  "melbourne", "mexico-city", "miami", "mumbai", "nairobi",
+  "new-york", "paris", "reykjavik", "riyadh", "rome",
+  "santiago", "seoul", "singapore", "stockholm", "sydney",
+  "taipei", "tel-aviv", "tokyo", "toronto",
+]
+
+  [[feed.property]]
+  path      = "pm25"
+  normalize = "pm25"
+
+  [[feed.property]]
+  path      = "pm10"
+  normalize = "pm10"
+
+  [[feed.property]]
+  path      = "co"
+  normalize = "gas_ppm"
+
+  [[feed.property]]
+  path      = "no2"
+  normalize = "gas_ppm"
+
+  [[feed.property]]
+  path      = "o3"
+  normalize = "gas_ppm"
+
+  [[feed.property]]
+  path      = "so2"
+  normalize = "gas_ppm"
+
+  [[feed.property]]
+  path      = "station_count"
+  normalize = "station_count"
+
+# ── Grid EU — flat_multi, 10 countries × 2 properties = 20 fresh signals ──────
+
+[[feed]]
+namespace = "flux-grid-eu"
+shape     = "flat_multi"
+entities  = ["be", "de", "es", "fr", "gb", "it", "nl", "no", "pl", "se"]
+
+  [[feed.property]]
+  path      = "day_ahead_price_eur_mwh"
+  normalize = "eur_per_mwh"
+
+  [[feed.property]]
+  path      = "load_mw"
+  normalize = "load_mw"
+
+# ── Grid US — flat_multi, 12 respondents × 3 properties = 36 fresh signals ────
+
+[[feed]]
+namespace = "flux-grid-us"
+shape     = "flat_multi"
+entities  = ["bpat", "ciso", "duk", "erco", "fpl", "isne", "miso", "nyis", "pjm", "pnm", "spp", "tva"]
+
+  [[feed.property]]
+  path      = "demand_mwh"
+  normalize = "us_demand_mwh"
+
+  [[feed.property]]
+  path      = "net_generation_mwh"
+  normalize = "us_demand_mwh"
+
+  [[feed.property]]
+  path      = "total_interchange_mwh"
+  normalize = "us_interchange_mwh"
+
+# ── Energy — scalar, 3 EIA entities = 3 fresh signals ────────────────────────
+# Note: flux-energy/wti-crude and flux-commodities/wti-crude are separate
+# signals (different IDs) from different sources (EIA vs IMF).
+
+[[feed]]
+namespace = "flux-energy"
+shape     = "scalar"
+
+  [[feed.entity]]
+  name         = "henry-hub-natural-gas"
+  path         = "value"
+  parse_string = true
+  normalize    = "natural_gas_usd"
+
+  [[feed.entity]]
+  name         = "us-electricity-demand"
+  path         = "value"
+  parse_string = true
+  normalize    = "electricity_demand"
+
+  [[feed.entity]]
+  name         = "wti-crude"
+  path         = "value"
+  parse_string = true
+  normalize    = "oil_usd"
+
+# ── ISS — 2 blocks, 4 fresh signals total ─────────────────────────────────────
+# iss-position (coordinate object) and timestamp are skipped — not scalar.
+
+[[feed]]
+namespace = "flux-iss"
+shape     = "scalar"
+
+  [[feed.entity]]
+  name      = "iss-crew"
+  path      = "number"
+  normalize = "iss_crew"
+
+[[feed]]
+namespace = "flux-iss"
+shape     = "flat_multi"
+entities  = ["iss-details"]
+
+  [[feed.property]]
+  path      = "altitude"
+  normalize = "iss_altitude"
+
+  [[feed.property]]
+  path      = "velocity"
+  normalize = "iss_velocity"
+
+  [[feed.property]]
+  path      = "footprint"
+  normalize = "iss_footprint"
