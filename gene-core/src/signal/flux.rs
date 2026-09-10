@@ -171,15 +171,19 @@ async fn connect_and_listen(
 
     let (mut ws, _) = tokio_tungstenite::connect_async(&url).await?;
 
-    // Subscribe to all entities; we filter client-side for flux-earthquakes/
+    // This poller only ever keeps flux-earthquakes/, so ask Flux for just that
+    // rather than taking every namespace and discarding the rest. observer-gene
+    // opens TWO websocket connections; leaving this one on "*" meant it still
+    // received the whole instance even after the multi-feed subscriber was
+    // scoped. Client-side filtering below is retained as the authority.
     ws.send(Message::Text(
-        r#"{"type":"subscribe","entity_id":"*"}"#.to_string().into()
+        r#"{"type":"subscribe","entity_id":"flux-earthquakes/*"}"#.to_string().into()
     )).await?;
 
     if let Ok(mut s) = state.lock() {
         s.connected = true;
     }
-    tracing::info!("flux ws: connected, subscribed to all entities");
+    tracing::info!("flux ws: connected, subscribed to flux-earthquakes/*");
 
     while let Some(msg) = ws.next().await {
         match msg? {
