@@ -106,8 +106,17 @@ struct Args {
     #[arg(long, default_value = "1000")]
     tick_floor_us: u64,
 
+    /// Ceiling for the ledger's on-disk footprint, in MiB, enforced against
+    /// sled's reported size. Previously this was converted to an entry count via
+    /// an assumed 256 bytes per snapshot, which measured ~182 KB in practice —
+    /// so the ledger reached 36.9 GiB under a nominal 512 MB setting.
     #[arg(long, default_value = "512")]
     disk_quota_mb: u64,
+
+    /// Oldest entries dropped per compaction pass once the byte quota is
+    /// exceeded. Larger batches compact less often but shed more at a time.
+    #[arg(long, default_value = "50000")]
+    compact_batch_entries: u64,
 
     #[arg(long, default_value = "1000")]
     checkpoint_interval: u64,
@@ -281,7 +290,10 @@ fn main() -> Result<()> {
     let catalog = shape::parse_catalog(FEEDS_CATALOG_TOML)?;
 
     let ledger_path   = args.data_dir.join("ledger");
-    let quota_entries = (args.disk_quota_mb * 1024 * 1024) / 256;
+    // Byte quota, enforced directly. The old form divided by an assumed 256
+    // bytes per snapshot; measured snapshots are ~182 KB, so "512 MB" was
+    // authorising tens of gigabytes.
+    let quota_bytes = args.disk_quota_mb * 1024 * 1024;
 
     let mut bus = build_bus();
 
@@ -327,7 +339,8 @@ fn main() -> Result<()> {
         bus.all_signals().iter().map(|(id, s)| (*id, s.baseline)).collect();
 
     let mut action_space      = build_action_space(&registry);
-    let mut ledger            = SignalLedger::open(&ledger_path, quota_entries)?;
+    let mut ledger            = SignalLedger::open(
+        &ledger_path, quota_bytes, args.compact_batch_entries)?;
     let mut causal            = CausalTracer::new(10_000);
     let mut pattern_extractor = PatternExtractor::new();
     let mut pattern_index     = PatternIndex::new();
