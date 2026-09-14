@@ -34,6 +34,35 @@ pub struct SignalLedger {
     /// attempts are suppressed until the footprint actually grows past this
     /// mark, and the operator is told an offline rebuild is what reclaims space.
     ineffective_above: Option<u64>,
+    /// Set once the ledger has stopped accepting writes.
+    ///
+    /// THE QUOTA IS A CEILING, NOT A HINT. Before this existed, `append` grew
+    /// the file forever whenever compaction could not reclaim: the suspension
+    /// guard above stopped the pointless compaction, but nothing stopped the
+    /// writes. The ledger went 46.4 -> 75.7 GiB in four days, filled the root
+    /// filesystem, and crash-looped observer-gene 17,280 times over three days.
+    /// Sealing is what makes the quota real.
+    sealed: Option<SealReason>,
+    /// Appends since the last size check while sealed, so a sealed ledger still
+    /// notices if an operator frees space, without stat-ing on every tick.
+    since_seal_check: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SealReason {
+    /// Over quota and compaction cannot reclaim.
+    QuotaExhausted,
+    /// The underlying store refused a write (disk full, permissions, corruption).
+    WriteFailed,
+}
+
+impl SealReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            SealReason::QuotaExhausted => "quota exhausted and compaction cannot reclaim",
+            SealReason::WriteFailed => "the store refused a write",
+        }
+    }
 }
 
 /// How often to ask sled for its on-disk size. At ~19 appends/sec this is about
@@ -69,6 +98,8 @@ impl SignalLedger {
             compact_batch: compact_batch.max(1),
             since_size_check: 0,
             ineffective_above: None,
+            sealed: None,
+            since_seal_check: 0,
         })
     }
 
@@ -83,28 +114,110 @@ impl SignalLedger {
         self.db.size_on_disk().unwrap_or(0)
     }
 
-    /// Append a snapshot. Returns the tick key used.
+    /// True once the ledger has stopped accepting writes.
+    pub fn is_sealed(&self) -> bool {
+        self.sealed.is_some()
+    }
+
+    /// Append a snapshot.
+    ///
+    /// NEVER returns Err for a storage problem. This ledger is an archive that
+    /// nothing reads back — `append` and `flush` are its only callers in the
+    /// whole workspace — so a failure to persist must not take down the agent
+    /// that produces the data. Propagating ENOSPC from here is precisely how a
+    /// full disk turned into 17,280 restarts of observer-gene: the process
+    /// exited on `ledger.append(&snapshot)?` and systemd restarted it forever.
+    /// Serialization bugs still surface as Err, because those are our own.
     pub fn append(&mut self, snapshot: &SignalSnapshot) -> Result<()> {
+        if self.sealed.is_some() {
+            self.recheck_seal();
+            return Ok(());
+        }
+
         let key = snapshot.tick.to_be_bytes();
         let value = bincode::serialize(snapshot)?;
-        self.db.insert(key, value)?;
+
+        if let Err(e) = self.db.insert(key, value) {
+            self.seal(SealReason::WriteFailed, Some(&e.to_string()));
+            return Ok(());
+        }
         self.since_size_check += 1;
 
         if self.since_size_check >= SIZE_CHECK_INTERVAL {
             self.since_size_check = 0;
-            let on_disk = self.size_on_disk();
-            let worth_trying = match self.ineffective_above {
-                // Compaction already proved unable to reclaim at this size. Only
-                // try again once the footprint has genuinely grown past it.
-                Some(mark) => on_disk > mark.saturating_add(INEFFECTIVE_RETRY_MARGIN),
-                None => true,
-            };
-            if on_disk > self.quota_bytes && worth_trying {
-                self.compact(self.compact_batch, on_disk)?;
-            }
+            self.enforce_quota();
         }
 
         Ok(())
+    }
+
+    /// Bring the footprint back under quota, or seal if that is impossible.
+    fn enforce_quota(&mut self) {
+        let on_disk = self.size_on_disk();
+        if on_disk <= self.quota_bytes {
+            return;
+        }
+
+        let worth_trying = match self.ineffective_above {
+            // Compaction already proved unable to reclaim at this size. Only
+            // try again once the footprint has genuinely grown past it.
+            Some(mark) => on_disk > mark.saturating_add(INEFFECTIVE_RETRY_MARGIN),
+            None => true,
+        };
+
+        if worth_trying {
+            if let Err(e) = self.compact(self.compact_batch, on_disk) {
+                self.seal(SealReason::WriteFailed, Some(&e.to_string()));
+                return;
+            }
+        }
+
+        // The decisive check: if the footprint is STILL over quota after doing
+        // everything we can, stop writing. Growing past the ceiling is not an
+        // option — that is what filled the disk.
+        if self.size_on_disk() > self.quota_bytes {
+            self.seal(SealReason::QuotaExhausted, None);
+        }
+    }
+
+    fn seal(&mut self, reason: SealReason, detail: Option<&str>) {
+        if self.sealed.is_some() {
+            return;
+        }
+        self.sealed = Some(reason);
+        self.since_seal_check = 0;
+        tracing::error!(
+            "ledger SEALED — no further snapshots will be persisted. Reason: {}{}.              On disk {:.2} GiB against a {:.2} GiB quota. observer-gene keeps running:              nothing reads this ledger back, so losing new archive entries costs the              agent nothing, whereas filling the disk takes the whole host down.              To restore archiving, free space (the ledger directory can be removed              outright — the agent's state lives in checkpoint.bin) and restart.",
+            reason.as_str(),
+            detail.map(|d| format!(" ({})", d)).unwrap_or_default(),
+            self.size_on_disk() as f64 / 1_073_741_824.0,
+            self.quota_bytes as f64 / 1_073_741_824.0,
+        );
+    }
+
+    /// While sealed, occasionally check whether space was freed underneath us.
+    fn recheck_seal(&mut self) {
+        self.since_seal_check += 1;
+        if self.since_seal_check < SIZE_CHECK_INTERVAL {
+            return;
+        }
+        self.since_seal_check = 0;
+
+        // Only a quota seal can clear itself; a refused write means the store
+        // is in a state an operator needs to look at.
+        if self.sealed != Some(SealReason::QuotaExhausted) {
+            return;
+        }
+        let on_disk = self.size_on_disk();
+        if on_disk <= self.quota_bytes {
+            self.sealed = None;
+            self.ineffective_above = None;
+            tracing::info!(
+                "ledger unsealed: footprint back to {:.2} GiB, under the {:.2} GiB quota —                  resuming snapshot persistence",
+                on_disk as f64 / 1_073_741_824.0,
+                self.quota_bytes as f64 / 1_073_741_824.0,
+            );
+        }
     }
 
     /// Read snapshots in a tick range [from, to].
@@ -172,8 +285,140 @@ impl SignalLedger {
         Ok(())
     }
 
-    pub fn flush(&self) -> Result<()> {
-        self.db.flush()?;
+    /// Flush pending writes.
+    ///
+    /// Like `append`, a storage failure here is reported and swallowed rather
+    /// than propagated: main.rs calls `ledger.flush()?` on the checkpoint path
+    /// and at shutdown, and a full disk must not turn either into a crash.
+    pub fn flush(&mut self) -> Result<()> {
+        if let Err(e) = self.db.flush() {
+            self.seal(SealReason::WriteFailed, Some(&e.to_string()));
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::signal::types::{SignalId, SignalSnapshot};
+
+    /// Unique scratch directory per test, removed on drop.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Self {
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let p = std::env::temp_dir().join(format!("gene-ledger-{tag}-{nanos}"));
+            Self(p)
+        }
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn snap(tick: u64) -> SignalSnapshot {
+        SignalSnapshot {
+            tick,
+            timestamp_ms: tick as i64,
+            // Enough payload that a few thousand entries exceed a small quota.
+            values: (0..64u32).map(|i| (SignalId(i), i as f64 * 1.5)).collect(),
+            imbalance: 1.0,
+        }
+    }
+
+    /// THE REGRESSION. The quota used to be advisory: when compaction could not
+    /// reclaim, appends carried on and the file grew without limit. That filled
+    /// the root filesystem and crash-looped observer-gene for three days.
+    #[test]
+    fn append_stops_growing_once_the_quota_cannot_be_met() {
+        let dir = Scratch::new("quota");
+        // 1 MiB quota with a tiny compaction batch: compaction cannot keep up,
+        // which is exactly the condition that previously grew without bound.
+        let mut led = SignalLedger::open(dir.path(), 1024 * 1024, 1).unwrap();
+
+        for tick in 0..60_000u64 {
+            led.append(&snap(tick)).unwrap();
+            if led.is_sealed() {
+                break;
+            }
+        }
+
+        assert!(led.is_sealed(), "ledger must seal rather than grow past quota");
+
+        let sealed_at = led.size_on_disk();
+        for tick in 60_000..90_000u64 {
+            led.append(&snap(tick)).unwrap();
+        }
+        let after = led.size_on_disk();
+
+        assert!(
+            after <= sealed_at + 1024 * 1024,
+            "sealed ledger grew from {sealed_at} to {after} bytes — the seal is not holding",
+        );
+    }
+
+    /// A sealed ledger must not take the agent down with it.
+    #[test]
+    fn appending_to_a_sealed_ledger_is_a_successful_no_op() {
+        let dir = Scratch::new("noop");
+        let mut led = SignalLedger::open(dir.path(), 1024 * 1024, 1).unwrap();
+        for tick in 0..60_000u64 {
+            led.append(&snap(tick)).unwrap();
+            if led.is_sealed() {
+                break;
+            }
+        }
+        assert!(led.is_sealed());
+
+        // Every one of these must be Ok. main.rs does `ledger.append(&snapshot)?`,
+        // so an Err here is a process exit and a systemd restart loop.
+        for tick in 100_000..100_100u64 {
+            assert!(led.append(&snap(tick)).is_ok(), "sealed append returned Err");
+        }
+        assert!(led.flush().is_ok(), "sealed flush returned Err");
+    }
+
+    #[test]
+    fn a_healthy_ledger_stays_unsealed_and_persists() {
+        let dir = Scratch::new("healthy");
+        // Quota far above what these few entries need.
+        let mut led = SignalLedger::open(dir.path(), 512 * 1024 * 1024, 64).unwrap();
+        for tick in 0..2_000u64 {
+            led.append(&snap(tick)).unwrap();
+        }
+        assert!(!led.is_sealed(), "a ledger inside its quota must not seal");
+        led.flush().unwrap();
+        assert_eq!(led.tail(1).unwrap().len(), 1, "entries should be readable back");
+    }
+
+    #[test]
+    fn reopening_a_ledger_does_not_scan_it() {
+        // Guards the 38-minute startup: open() must not walk the database.
+        let dir = Scratch::new("reopen");
+        {
+            let mut led = SignalLedger::open(dir.path(), 512 * 1024 * 1024, 64).unwrap();
+            for tick in 0..5_000u64 {
+                led.append(&snap(tick)).unwrap();
+            }
+            led.flush().unwrap();
+        }
+        let start = std::time::Instant::now();
+        let led = SignalLedger::open(dir.path(), 512 * 1024 * 1024, 64).unwrap();
+        assert!(!led.is_sealed());
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "open() took {:?} — it is scanning the database again",
+            start.elapsed(),
+        );
     }
 }
